@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fuel Pump Base -->
+  <rect x="8" y="12" width="16" height="16" rx="2" fill="#2563EB"/>
+  <!-- Pump Handle -->
+  <path d="M16 4V12M12 8H20" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/>
+  <!-- Nozzle -->
+  <rect x="14" y="24" width="4" height="4" rx="1" fill="white"/>
+  <!-- Display Screen -->
+  <rect x="10" y="14" width="12" height="8" rx="1" fill="white"/>
+  <!-- Price Display Lines -->
+  <path d="M12 17H20M12 19H20" stroke="#E5E7EB" stroke-width="1"/>
+</svg> 
