@@ -636,7 +636,7 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
                   </div>
                   <div className="col-span-2">
                     <span className="text-gray-600">Total Sales:</span>
-                    <span className="ml-2 font-bold text-green-600">₦{totalSales.toFixed(2)}</span>
+                    <span className="ml-2 font-bold text-blue-600">₦{totalSales.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -725,7 +725,7 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
                                 <span className="text-sm text-gray-500">Price/L:</span>
                                 <span className="font-medium">₦{record.price_per_litre?.toLocaleString()}</span>
                               </div>
-                              <div className="flex justify-between text-green-600">
+                              <div className="flex justify-between text-blue-600">
                                 <span className="text-sm">Total:</span>
                                 <span className="font-bold">₦{record.total_sales?.toLocaleString()}</span>
                               </div>
@@ -765,7 +765,7 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
             </AlertDialogAction>
             <AlertDialogAction
               onClick={handleCreateNew}
-              className="bg-green-500 hover:bg-green-600"
+              className="bg-blue-500 hover:bg-blue-600"
             >
               Create New
             </AlertDialogAction>

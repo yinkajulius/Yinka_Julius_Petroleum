@@ -401,6 +401,81 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
     }
   };
 
+  // Excess Calculations section - only visible on the 1st of the month
+  const today = new Date(date);
+  const isFirstOfMonth = today.getDate() === 1;
+  const [realStocks, setRealStocks] = useState<{ [tankId: string]: string }>({});
+  const [excessValues, setExcessValues] = useState<{ [tankId: string]: number }>({});
+
+  // Handler for real stock input
+  const handleRealStockChange = (tankId: string, value: string, openingStock: number) => {
+    setRealStocks(prev => ({ ...prev, [tankId]: value }));
+    const real = parseFloat(value);
+    setExcessValues(prev => ({ ...prev, [tankId]: isNaN(real) ? 0 : real - openingStock }));
+  };
+
+  const handleUpdateOpeningStock = async (tankId: string, realStock: string, product_type: string) => {
+    const real = parseFloat(realStock);
+    if (isNaN(real)) return;
+    // Get the first pump ID for this tank
+    const { data: pumpData, error: pumpError } = await supabase
+      .from('pumps')
+      .select('id')
+      .eq('tank_id', tankId)
+      .single();
+    if (pumpError || !pumpData) return;
+    // Update or insert today's record
+    const { data: record, error: recordError } = await supabase
+      .from('fuel_records')
+      .select('id, sales_volume')
+      .eq('station_code', stationId)
+      .eq('pump_id', pumpData.id)
+      .eq('record_date', date)
+      .single();
+    let saveError;
+    if (record) {
+      const { error: updateError } = await supabase
+        .from('fuel_records')
+        .update({
+          opening_stock: real,
+          closing_stock: Math.max(0, real - (record.sales_volume || 0))
+        })
+        .eq('id', record.id);
+      saveError = updateError;
+    } else {
+      const { error: insertError } = await supabase
+        .from('fuel_records')
+        .insert({
+          station_code: stationId,
+          pump_id: pumpData.id,
+          product_type,
+          record_date: date,
+          opening_stock: real,
+          sales_volume: 0,
+          input_mode: 'manual',
+          meter_opening: 0,
+          meter_closing: 0,
+          closing_stock: real,
+          price_per_litre: 0,
+          total_sales: 0
+        });
+      saveError = insertError;
+    }
+    if (saveError) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update opening stock.'
+      });
+    } else {
+      toast({
+        title: 'Success',
+        description: 'Opening stock updated from real stock.'
+      });
+      setTankGroups(prev => prev.map(g => g.tank_id === tankId ? { ...g, openingStock: real } : g));
+    }
+  };
+
   if (loading) {
     return <div>Loading tanks...</div>;
   }
@@ -476,7 +551,7 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {tankGroups.map((tank) => {
           const percentage = tank.maxCapacity ? (tank.closingStock / tank.maxCapacity) * 100 : 0;
-          let statusColor = 'bg-green-500';
+          let statusColor = 'bg-blue-500';
           if (percentage <= 20) {
             statusColor = 'bg-red-500';
           } else if (percentage <= 40) {
@@ -526,7 +601,7 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Tank Level</span>
-                      <span className={percentage <= 20 ? 'text-red-500' : percentage <= 40 ? 'text-yellow-500' : 'text-green-500'}>
+                      <span className={percentage <= 20 ? 'text-red-500' : percentage <= 40 ? 'text-yellow-500' : 'text-blue-500'}>
                         {Math.round(percentage)}%
                       </span>
                     </div>
@@ -562,6 +637,37 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
           );
         })}
       </div>
+
+      {isFirstOfMonth && (
+        <div className="my-8 p-6 bg-blue-50 rounded-xl shadow border border-blue-200">
+          <h2 className="text-xl font-bold text-blue-800 mb-4">Excess Calculations</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {tankGroups.map((tank) => (
+              <div key={tank.tank_id} className="bg-white rounded-lg shadow p-4 flex flex-col items-center">
+                <div className="font-semibold text-gray-800 mb-2">Tank {tank.tank_id} ({tank.product_type})</div>
+                <Input
+                  type="number"
+                  placeholder="Enter Real Stock (L)"
+                  value={realStocks[tank.tank_id] || ''}
+                  onChange={e => handleRealStockChange(tank.tank_id, e.target.value, tank.openingStock)}
+                  className="mb-2 text-center"
+                />
+                <Button
+                  size="sm"
+                  className="mb-2"
+                  onClick={() => handleUpdateOpeningStock(tank.tank_id, realStocks[tank.tank_id], tank.product_type)}
+                >
+                  Update as Opening Stock
+                </Button>
+                <div className="text-sm text-gray-600">Excess:</div>
+                <div className={`text-lg font-bold ${excessValues[tank.tank_id] > 0 ? 'text-blue-600' : excessValues[tank.tank_id] < 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                  {typeof excessValues[tank.tank_id] === 'number' && !isNaN(excessValues[tank.tank_id]) ? excessValues[tank.tank_id].toLocaleString() : '--'} L
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

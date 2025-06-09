@@ -271,15 +271,19 @@ const StationDashboard = () => {
                     
                     {/* Desktop spacing */}
                     <div className="hidden md:block" />
-                    
+                      <div className="-pl-10" >
+                          <h1 className="text-2xl font-bold text-gray-900">
+                                Admin Dashboard
+                              </h1>
+                              <p className="text-2xl font-bold text-gray-900">
+                                Welcome, {profile?.full_name} (admin)
+                              </p>
+                      </div> 
                     <div className="flex gap-2">
                       <Button onClick={() => setSelectedStation(null)} variant="secondary">
                         Back to All Stations
                       </Button>
-                      <Button onClick={handleLogout} variant="outline">
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Logout
-                      </Button>
+                      
                     </div>
                   </div>
                 </div>
@@ -288,12 +292,14 @@ const StationDashboard = () => {
               {/* Content area */}
               <div className="flex-1 p-6">
                 <div className="flex justify-end mb-6">
-                  <Input
-                    type="date"
-                    value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
-                    className="w-48"
-                  />
+                  {selectedTab !== 'staff' && (
+                    <Input
+                      type="date"
+                      value={selectedDate}
+                      onChange={e => setSelectedDate(e.target.value)}
+                      className="w-48"
+                    />
+                  )}
                 </div>
                 
                 {/* Tab content rendering */}
@@ -433,12 +439,14 @@ const StationDashboard = () => {
             {/* Content area */}
             <div className="flex-1 p-6">
               <div className="flex justify-end mb-6">
-                <Input
-                  type="date"
-                  value={selectedDate}
-                  onChange={e => setSelectedDate(e.target.value)}
-                  className="w-48"
-                />
+                {selectedTab !== 'staff' && (
+                  <Input
+                    type="date"
+                    value={selectedDate}
+                    onChange={e => setSelectedDate(e.target.value)}
+                    className="w-48"
+                  />
+                )}
               </div>
               
               {/* Tab content rendering */}
