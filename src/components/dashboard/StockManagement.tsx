@@ -85,6 +85,7 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
     }));
   };
 
+  // Update handleRestock: for each pump in the tank, if today's record exists, update; else, create with correct opening/closing meter
   const handleRestock = async (tankId: string, currentOpeningStock: number, product_type: string) => {
     const restockAmount = parseFloat(restockAmounts[tankId]);
     if (isNaN(restockAmount) || restockAmount <= 0) {
@@ -99,19 +100,77 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
     setRestockLoading(prev => ({ ...prev, [tankId]: true }));
 
     try {
-      // Get the first pump ID for this tank
-      const { data: pumpData, error: pumpError } = await supabase
+      // Get all pumps for ONLY this tank
+      const { data: pumps, error: pumpsError } = await supabase
         .from('pumps')
         .select('id')
-        .eq('tank_id', tankId)
-        .single();
-
-      if (pumpError) throw pumpError;
+        .eq('tank_id', tankId);
+      if (pumpsError) throw pumpsError;
 
       // Calculate new opening stock by adding to current stock
       const newOpeningStock = currentOpeningStock + restockAmount;
 
-      // Update the UI immediately
+      // For each pump in the selected tank, update or insert the record for today
+      for (const pump of pumps) {
+        // Check if a record exists for this date and pump
+        const { data: existingRecord, error: fetchError } = await supabase
+          .from('fuel_records')
+          .select('id, sales_volume, meter_opening, meter_closing')
+          .eq('station_code', stationId)
+          .eq('pump_id', pump.id)
+          .eq('record_date', date)
+          .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is the "no rows returned" error
+          throw fetchError;
+        }
+
+        let error;
+        if (existingRecord) {
+          // Update existing record's opening stock and meters
+          const { error: updateError } = await supabase
+            .from('fuel_records')
+            .update({
+              opening_stock: newOpeningStock,
+              closing_stock: Math.max(0, newOpeningStock - (existingRecord.sales_volume || 0)),
+              meter_opening: existingRecord.meter_opening || 0,
+              meter_closing: existingRecord.meter_closing || 0
+            })
+            .eq('id', existingRecord.id);
+          error = updateError;
+        } else {
+          // Instead of creating a new record, update the last available record's closing stock only
+          const { data: lastRecord, error: lastError } = await supabase
+            .from('fuel_records')
+            .select('id, closing_stock')
+            .eq('station_code', stationId)
+            .eq('pump_id', pump.id)
+            .lt('record_date', date)
+            .order('record_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (lastError) throw lastError;
+          if (lastRecord) {
+            const { error: updateLastError } = await supabase
+              .from('fuel_records')
+              .update({
+                closing_stock: newOpeningStock
+              })
+              .eq('id', lastRecord.id);
+            if (updateLastError) throw updateLastError;
+          } else {
+            toast({
+              variant: "destructive",
+              title: "Error",
+              description: "No previous record found to update for this pump.",
+            });
+            continue;
+          }
+        }
+        if (error) throw error;
+      }
+
+      // Update the UI immediately for ONLY this tank
       setTankGroups(prevGroups => 
         prevGroups.map(group => 
           group.tank_id === tankId
@@ -120,56 +179,9 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
                 openingStock: newOpeningStock,
                 closingStock: Math.max(0, newOpeningStock - group.salesVolume)
               }
-            : group
+          : group
         )
       );
-
-      // Check if a record exists for this date and pump
-      const { data: existingRecord, error: fetchError } = await supabase
-        .from('fuel_records')
-        .select('id, sales_volume')
-        .eq('station_code', stationId)
-        .eq('pump_id', pumpData.id)
-        .eq('record_date', date)
-        .single();
-
-      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is the "no rows returned" error
-        throw fetchError;
-      }
-
-      let error;
-      if (existingRecord) {
-        // Update existing record's opening stock only
-        const { error: updateError } = await supabase
-          .from('fuel_records')
-          .update({
-            opening_stock: newOpeningStock,
-            closing_stock: Math.max(0, newOpeningStock - (existingRecord.sales_volume || 0))
-          })
-          .eq('id', existingRecord.id);
-        error = updateError;
-      } else {
-        // Create new record if none exists
-        const { error: insertError } = await supabase
-          .from('fuel_records')
-          .insert({
-            station_code: stationId,
-            pump_id: pumpData.id,
-            product_type: product_type,
-            record_date: date,
-            opening_stock: newOpeningStock,
-            sales_volume: 0,
-            input_mode: 'restock',
-            meter_opening: 0,
-            meter_closing: 0,
-            closing_stock: newOpeningStock,
-            price_per_litre: 0,
-            total_sales: 0
-          });
-        error = insertError;
-      }
-
-      if (error) throw error;
 
       // Clear the restock input
       setRestockAmounts(prev => ({
@@ -192,7 +204,7 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
                 openingStock: currentOpeningStock,
                 closingStock: Math.max(0, currentOpeningStock - group.salesVolume)
               }
-            : group
+          : group
         )
       );
       toast({
@@ -210,36 +222,35 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
       // Get the pump ID for this tank
       const { data: pumpData, error: pumpError } = await supabase
         .from('pumps')
-        .select('id')
+        .select('id, product_type')
         .eq('tank_id', tankId)
         .single();
-
       if (pumpError) throw pumpError;
 
       // Get today's record
       const { data: todayData, error: todayError } = await supabase
         .from('fuel_records')
-        .select('opening_stock, sales_volume')
+        .select('opening_stock, sales_volume, meter_opening, meter_closing, closing_stock')
         .eq('station_code', stationId)
         .eq('pump_id', pumpData.id)
         .eq('record_date', date)
         .single();
 
-      // If we have today's record, return it
       if (!todayError && todayData) {
-        const closingStock = Math.max(0, todayData.opening_stock - (todayData.sales_volume || 0));
         return {
           openingStock: todayData.opening_stock,
           salesVolume: todayData.sales_volume || 0,
-          closingStock
+          closingStock: todayData.closing_stock,
+          openingMeter: todayData.meter_opening || 0,
+          closingMeter: todayData.meter_closing || 0
         };
       }
 
-      // If no record exists for today, get yesterday's closing stock
+      // If no record exists for today, get yesterday's closing stock and meter
       const previousDate = format(subDays(new Date(date), 1), 'yyyy-MM-dd');
       const { data: yesterdayData, error: yesterdayError } = await supabase
         .from('fuel_records')
-        .select('closing_stock')
+        .select('closing_stock, meter_closing')
         .eq('station_code', stationId)
         .eq('pump_id', pumpData.id)
         .eq('record_date', previousDate)
@@ -249,22 +260,49 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
         return {
           openingStock: yesterdayData.closing_stock,
           salesVolume: 0,
-          closingStock: yesterdayData.closing_stock
+          closingStock: yesterdayData.closing_stock,
+          openingMeter: yesterdayData.meter_closing || 0,
+          closingMeter: yesterdayData.meter_closing || 0
         };
       }
 
-      // If no yesterday's record exists either, return zeros
+      // If not found, get the most recent previous record (any date before today)
+      const { data: lastRecord, error: lastError } = await supabase
+        .from('fuel_records')
+        .select('closing_stock, meter_closing, record_date')
+        .eq('station_code', stationId)
+        .eq('pump_id', pumpData.id)
+        .lt('record_date', date)
+        .order('record_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastError) throw lastError;
+      if (lastRecord) {
+        return {
+          openingStock: lastRecord.closing_stock || 0,
+          salesVolume: 0,
+          closingStock: lastRecord.closing_stock || 0,
+          openingMeter: lastRecord.meter_closing || 0,
+          closingMeter: lastRecord.meter_closing || 0
+        };
+      }
+
+      // If no previous record exists either, return zeros
       return {
         openingStock: 0,
         salesVolume: 0,
-        closingStock: 0
+        closingStock: 0,
+        openingMeter: 0,
+        closingMeter: 0
       };
     } catch (error) {
       console.error('Error fetching stock:', error);
       return {
         openingStock: 0,
         salesVolume: 0,
-        closingStock: 0
+        closingStock: 0,
+        openingMeter: 0,
+        closingMeter: 0
       };
     }
   };
@@ -443,23 +481,40 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
         .eq('id', record.id);
       saveError = updateError;
     } else {
-      const { error: insertError } = await supabase
+      // Instead of creating a new record, update the last available record's closing stock only
+      const { data: lastRecord, error: lastError } = await supabase
         .from('fuel_records')
-        .insert({
-          station_code: stationId,
-          pump_id: pumpData.id,
-          product_type,
-          record_date: date,
-          opening_stock: real,
-          sales_volume: 0,
-          input_mode: 'manual',
-          meter_opening: 0,
-          meter_closing: 0,
-          closing_stock: real,
-          price_per_litre: 0,
-          total_sales: 0
+        .select('id, closing_stock')
+        .eq('station_code', stationId)
+        .eq('pump_id', pumpData.id)
+        .lt('record_date', date)
+        .order('record_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastError) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Failed to update opening stock.'
         });
-      saveError = insertError;
+        return;
+      }
+      if (lastRecord) {
+        const { error: updateLastError } = await supabase
+          .from('fuel_records')
+          .update({
+            closing_stock: real
+          })
+          .eq('id', lastRecord.id);
+        saveError = updateLastError;
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'No previous record found to update for this pump.'
+        });
+        return;
+      }
     }
     if (saveError) {
       toast({

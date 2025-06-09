@@ -54,7 +54,6 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
     loadPumps();
     loadPrices();
     loadSavedRecords();
-    initializeStockData();
   }, [stationId, date]);
 
   useEffect(() => {
@@ -208,15 +207,56 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
     }
     // No record at all, proceed as normal
     setSelectedPump(pumpId);
-    const previousClosing = await loadPreviousDayClosing(pumpId);
-    if (previousClosing !== null) {
-      setMeterOpening(previousClosing.toString());
+
+    // Try to get previous day's closing meter and stock
+    const previousDate = new Date(date);
+    previousDate.setDate(previousDate.getDate() - 1);
+    const formattedPreviousDate = format(previousDate, 'yyyy-MM-dd');
+
+    let yesterdayRecord = null;
+    let yesterdayError = null;
+    ({ data: yesterdayRecord, error: yesterdayError } = await supabase
+      .from('fuel_records')
+      .select('closing_stock, meter_closing, record_date')
+      .eq('station_code', stationId)
+      .eq('pump_id', pumpId)
+      .eq('record_date', formattedPreviousDate)
+      .single());
+
+    if (yesterdayError && yesterdayError.code !== 'PGRST116') throw yesterdayError;
+
+    if (yesterdayRecord) {
+      setMeterOpening(yesterdayRecord.meter_closing?.toString() || '');
+      // Optionally, set opening stock in state if you want to display it
+      // setOpeningStock(yesterdayRecord.closing_stock?.toString() || '');
       toast({
         title: "Info",
-        description: "Meter opening has been set to previous day's closing reading.",
+        description: "Meter opening and stock set to previous day's closing.",
       });
     } else {
-      setMeterOpening('');
+      // If not found, get the most recent previous record (any date before today)
+      const { data: lastRecord, error: lastError } = await supabase
+        .from('fuel_records')
+        .select('closing_stock, meter_closing, record_date')
+        .eq('station_code', stationId)
+        .eq('pump_id', pumpId)
+        .lt('record_date', date)
+        .order('record_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastError) throw lastError;
+      if (lastRecord) {
+        setMeterOpening(lastRecord.meter_closing?.toString() || '');
+        // Optionally, set opening stock in state if you want to display it
+        // setOpeningStock(lastRecord.closing_stock?.toString() || '');
+        toast({
+          title: "Info",
+          description: `Meter opening and stock set to last available record (${lastRecord.record_date}).`,
+        });
+      } else {
+        setMeterOpening('');
+        // setOpeningStock('');
+      }
     }
     setMeterClosing('');
     setIsEditing(false);
@@ -311,18 +351,39 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
         previousDate.setDate(previousDate.getDate() - 1);
         const formattedPreviousDate = format(previousDate, 'yyyy-MM-dd');
 
-        const { data: yesterdayRecord, error: yesterdayError } = await supabase
+        let yesterdayRecord = null;
+        let yesterdayError = null;
+        // Try to get yesterday's record
+        ({ data: yesterdayRecord, error: yesterdayError } = await supabase
           .from('fuel_records')
-          .select('closing_stock')
+          .select('closing_stock, meter_closing, record_date')
           .eq('station_code', stationId)
           .eq('pump_id', selectedPump)
           .eq('record_date', formattedPreviousDate)
-          .single();
+          .single());
 
         if (yesterdayError && yesterdayError.code !== 'PGRST116') throw yesterdayError;
 
-        // Use yesterday's closing stock as today's opening stock
-        openingStock = yesterdayRecord?.closing_stock || 0;
+        // If not found, get the most recent previous record
+        if (!yesterdayRecord) {
+          const { data: lastRecord, error: lastError } = await supabase
+            .from('fuel_records')
+            .select('closing_stock, meter_closing, record_date')
+            .eq('station_code', stationId)
+            .eq('pump_id', selectedPump)
+            .lt('record_date', date)
+            .order('record_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (lastError) throw lastError;
+          if (lastRecord) {
+            openingStock = lastRecord.closing_stock || 0;
+          } else {
+            openingStock = 0;
+          }
+        } else {
+          openingStock = yesterdayRecord.closing_stock || 0;
+        }
       }
 
       // Calculate closing stock based on opening stock and sales volume
@@ -394,24 +455,8 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
           .eq('id', tomorrowRecord.id);
         if (updateError) throw updateError;
       } else {
-        // Create tomorrow's record with opening stock AND meter_opening
-        const { error: insertError } = await supabase
-          .from('fuel_records')
-          .insert({
-            station_code: stationId,
-            pump_id: selectedPump,
-            product_type: pump.product_type,
-            record_date: tomorrowDate,
-            opening_stock: closingStock,
-            meter_opening: parseFloat(meterClosing) || 0,
-            meter_closing: 0,
-            sales_volume: 0,
-            input_mode: 'auto',
-            closing_stock: closingStock,
-            price_per_litre: 0,
-            total_sales: 0
-          });
-        if (insertError) throw insertError;
+        // REMOVE: Do not create tomorrow's record automatically
+        // (No insert for input_mode: 'auto')
       }
 
       // Create complete record with pump details
@@ -490,82 +535,6 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
   const salesVolume = calculateSalesVolume();
   const pricePerLitre = selectedPumpData ? getProductPrice(selectedPumpData.product_type) : 0;
   const totalSales = salesVolume * pricePerLitre;
-
-  const initializeStockData = async () => {
-    try {
-      // Get all pumps first
-      const { data: pumpsData, error: pumpsError } = await supabase
-        .from('pumps')
-        .select('*')
-        .eq('station_id', stationId);
-
-      if (pumpsError) throw pumpsError;
-
-      // For each pump, check and initialize stock data
-      for (const pump of pumpsData || []) {
-        // Check if today's record exists
-        const { data: todayRecord, error: todayError } = await supabase
-          .from('fuel_records')
-          .select('*')
-          .eq('station_code', stationId)
-          .eq('pump_id', pump.id)
-          .eq('record_date', date)
-          .single();
-
-        if (todayError && todayError.code !== 'PGRST116') throw todayError;
-
-        // If no record exists for today
-        if (!todayRecord) {
-          // Get yesterday's closing stock
-          const previousDate = new Date(date);
-          previousDate.setDate(previousDate.getDate() - 1);
-          const formattedPreviousDate = format(previousDate, 'yyyy-MM-dd');
-
-          const { data: yesterdayRecord, error: yesterdayError } = await supabase
-            .from('fuel_records')
-            .select('closing_stock')
-            .eq('station_code', stationId)
-            .eq('pump_id', pump.id)
-            .eq('record_date', formattedPreviousDate)
-            .single();
-
-          if (yesterdayError && yesterdayError.code !== 'PGRST116') throw yesterdayError;
-
-          const openingStock = yesterdayRecord?.closing_stock || 0;
-
-          // Create today's record with yesterday's closing stock as opening stock
-          const { error: insertError } = await supabase
-            .from('fuel_records')
-            .insert({
-              station_code: stationId,
-              pump_id: pump.id,
-              product_type: pump.product_type,
-              record_date: date,
-              opening_stock: openingStock,
-              closing_stock: openingStock, // Initially same as opening stock
-              sales_volume: 0,
-              input_mode: 'auto',
-              meter_opening: 0,
-              meter_closing: 0,
-              price_per_litre: 0,
-              total_sales: 0
-            });
-
-          if (insertError) throw insertError;
-        }
-      }
-
-      // Reload saved records to show the new data
-      await loadSavedRecords();
-    } catch (error) {
-      console.error('Error initializing stock data:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to initialize stock data",
-      });
-    }
-  };
 
   return (
     <div className="space-y-6">
