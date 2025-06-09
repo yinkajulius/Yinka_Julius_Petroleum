@@ -151,7 +151,8 @@ const StationDashboard = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    window.location.reload();
+    // Use client-side navigation to the login page instead of reload or hardcoded URL
+    window.location.href = '/';
   };
 
   if (loading) {
