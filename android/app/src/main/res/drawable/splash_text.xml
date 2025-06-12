@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="40dp"
+    android:viewportWidth="200"
+    android:viewportHeight="40">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,20 L200,20"
+        android:strokeWidth="1"
+        android:strokeColor="#FFFFFF"/>
+    <text
+        android:fontFamily="sans-serif-medium"
+        android:textSize="24sp"
+        android:textColor="#FFFFFF"
+        android:text="Yinka Julius Petroleum"
+        android:gravity="center"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+</vector>

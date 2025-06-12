@@ -6,6 +6,11 @@ import { format, subDays, subWeeks, subMonths, subYears, startOfDay, endOfDay, s
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from "@/components/ui/progress";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+
+// Helper function to round monetary values to nearest 10
+const roundToTen = (num: number) => Math.round(num / 10) * 10;
 
 interface DailySummaryProps {
   stationId: string;
@@ -86,19 +91,19 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
 
       if (salesError) throw salesError;
 
-      // Aggregate sales by product type
+      // Aggregate sales by product type - round only monetary values
       const aggregatedSales = salesResult?.reduce((acc: any[], record) => {
         const existing = acc.find(item => item.product_type === record.product_type);
         if (existing) {
-          existing.total_sales += record.total_sales || 0;
-          existing.total_volume += record.sales_volume || 0;
-          existing.price_per_litre = record.price_per_litre || 0;
+          existing.total_sales = roundToTen(existing.total_sales + (record.total_sales || 0));
+          existing.total_volume += record.sales_volume || 0; // Keep exact volume
+          existing.price_per_litre = roundToTen(record.price_per_litre || 0);
         } else {
           acc.push({
             product_type: record.product_type,
-            total_sales: record.total_sales || 0,
-            total_volume: record.sales_volume || 0,
-            price_per_litre: record.price_per_litre || 0
+            total_sales: roundToTen(record.total_sales || 0),
+            total_volume: record.sales_volume || 0, // Keep exact volume
+            price_per_litre: roundToTen(record.price_per_litre || 0)
           });
         }
         return acc;
@@ -106,7 +111,7 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
 
       setSalesData(aggregatedSales);
 
-      // Load detailed expense data
+      // Load and round expense data
       const { data: expenseResult, error: expenseError } = await supabase
         .from('expenses')
         .select('category, amount, description')
@@ -115,8 +120,13 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
 
       if (expenseError) throw expenseError;
 
-      setDetailedExpenses(expenseResult || []);
-      const totalExpenses = expenseResult?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0;
+      const roundedExpenses = expenseResult?.map(expense => ({
+        ...expense,
+        amount: roundToTen(expense.amount)
+      })) || [];
+
+      setDetailedExpenses(roundedExpenses);
+      const totalExpenses = roundToTen(roundedExpenses.reduce((sum, expense) => sum + expense.amount, 0));
       setExpenseData([{ total_expenses: totalExpenses }]);
     } catch (error) {
       console.error('Error loading summary data:', error);
@@ -192,7 +202,7 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
 
       console.log('Initial Grouped Data:', groupedData);
 
-      // Aggregate the data
+      // Aggregate the data - keep volumes exact
       records?.forEach(record => {
         const recordDate = new Date(record.record_date);
         let periodKey;
@@ -273,21 +283,21 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
 
       if (expensesError) throw expensesError;
 
-      // Aggregate the data manually
+      // Aggregate the data manually and round to nearest 10
       const combinedData: NetSalesRecord[] = dates.map(date => {
-        const dateSales = (salesData || [])
+        const dateSales = roundToTen((salesData || [])
           .filter(sale => sale.record_date === date)
-          .reduce((sum, sale) => sum + (sale.total_sales || 0), 0);
+          .reduce((sum, sale) => sum + (sale.total_sales || 0), 0));
 
-        const dateExpenses = (expensesData || [])
+        const dateExpenses = roundToTen((expensesData || [])
           .filter(expense => expense.expense_date === date)
-          .reduce((sum, expense) => sum + (expense.amount || 0), 0);
+          .reduce((sum, expense) => sum + (expense.amount || 0), 0));
 
         return {
           record_date: date,
           total_sales: dateSales,
           total_expenses: dateExpenses,
-          net_sales: dateSales - dateExpenses
+          net_sales: roundToTen(dateSales - dateExpenses)
         };
       });
 
@@ -323,11 +333,11 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
         .select('*')
         .eq('station_code', stationId)
         .order('record_date', { ascending: false })
-        .limit(3); // One for each product type
+        .limit(3);
 
       if (recordsError) throw recordsError;
 
-      // Combine the data
+      // Combine the data - keep volumes exact
       const levels = tankData?.map(tank => {
         const latestRecord = latestRecords?.find(record => 
           record.product_type === tank.product_type
@@ -335,8 +345,8 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
 
         return {
           product_type: tank.product_type,
-          current_volume: latestRecord?.closing_stock || 0,
-          max_capacity: tank.capacity,
+          current_volume: latestRecord?.closing_stock || 0, // Keep exact volume
+          max_capacity: tank.capacity, // Keep exact capacity
           last_updated: latestRecord?.record_date || ''
         };
       }) || [];
@@ -385,17 +395,15 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
   return (
     <div className="space-y-6">
       
-      
-
       {/* Detailed Summary Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
         {/* Sales Summary Card */}
         <Card className="col-span-1 lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="pb-2">
             <CardTitle className="text-xl font-bold">Sales Summary</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
+          <CardContent className="pt-2">
+            <div className="space-y-4">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
@@ -426,16 +434,14 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
 
         {/* Expenses Summary Card */}
         <Card className="col-span-1 lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="pb-2">
             <CardTitle className="text-xl font-bold">Expenses Summary</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              <table className="w-full">
-                <thead>
+          <CardContent className="pt-2">
+            <div className="space-y-4">
+              <table className="w-full">                <thead>
                   <tr className="border-b">
                     <th className="text-left py-2">Expense Type</th>
-                    <th className="text-left py-2">Description</th>
                     <th className="text-right py-2">Amount (₦)</th>
                   </tr>
                 </thead>
@@ -443,12 +449,11 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
                   {detailedExpenses.map((expense, index) => (
                     <tr key={index} className="border-b">
                       <td className="py-2">{expense.category}</td>
-                      <td className="py-2">{expense.description || '-'}</td>
                       <td className="text-right">{expense.amount.toLocaleString()}</td>
                     </tr>
                   ))}
                   <tr className="font-bold bg-gray-50">
-                    <td colSpan={2} className="py-2 pl-2">Total Expenses</td>
+                    <td className="py-2 pl-2">Total Expenses</td>
                     <td className="text-right py-2 pr-2">₦{totalExpenses.toLocaleString()}</td>
                   </tr>
                 </tbody>
@@ -505,83 +510,99 @@ const DailySummary = ({ stationId, date }: DailySummaryProps) => {
         </Card>
       </div>
 
-    
-
-      {/* Time Period Selection */}
-      <div className="flex justify-between items-center mb-4">
-        {trendPeriod === 'day' ? (
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <span>Year:</span>
-              <input
-                type="number"
-                value={format(new Date(selectedMonth), 'yyyy')}
-                onChange={(e) => {
-                  const newYear = e.target.value;
-                  const currentMonth = format(new Date(selectedMonth), 'MM');
-                  setSelectedMonth(`${newYear}-${currentMonth}`);
+        {/* Time Period Selection */}
+      <Card className="mb-4">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-medium">Select Time Period</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {trendPeriod === 'day' ? (
+                <>
+                  <div>
+                    <Label htmlFor="year" className="text-sm font-medium text-gray-700 mb-2 block">Year</Label>
+                    <Input
+                      id="year"
+                      type="number"
+                      value={format(new Date(selectedMonth), 'yyyy')}
+                      onChange={(e) => {
+                        const newYear = e.target.value;
+                        const currentMonth = format(new Date(selectedMonth), 'MM');
+                        setSelectedMonth(`${newYear}-${currentMonth}`);
+                      }}
+                      min="2000"
+                      max="2099"
+                      className="w-full h-10"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="month" className="text-sm font-medium text-gray-700 mb-2 block">Month</Label>
+                    <Select
+                      value={format(new Date(selectedMonth), 'MM')}
+                      onValueChange={(value) => {
+                        const currentYear = format(new Date(selectedMonth), 'yyyy');
+                        setSelectedMonth(`${currentYear}-${value}`);
+                      }}
+                    >
+                      <SelectTrigger id="month" className="w-full h-10">
+                        <SelectValue placeholder="Select month" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="01">January</SelectItem>
+                        <SelectItem value="02">February</SelectItem>
+                        <SelectItem value="03">March</SelectItem>
+                        <SelectItem value="04">April</SelectItem>
+                        <SelectItem value="05">May</SelectItem>
+                        <SelectItem value="06">June</SelectItem>
+                        <SelectItem value="07">July</SelectItem>
+                        <SelectItem value="08">August</SelectItem>
+                        <SelectItem value="09">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <Label htmlFor="yearOnly" className="text-sm font-medium text-gray-700 mb-2 block">Year</Label>
+                  <Input
+                    id="yearOnly"
+                    type="number"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    min="2000"
+                    max="2099"
+                    className="w-full h-10"
+                  />
+                </div>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="viewType" className="text-sm font-medium text-gray-700 mb-2 block">View Type</Label>
+              <Select 
+                value={trendPeriod} 
+                onValueChange={(value: any) => {
+                  setTrendPeriod(value);
+                  if (value === 'month') {
+                    setSelectedYear(format(new Date(selectedMonth), 'yyyy'));
+                  }
                 }}
-                min="2000"
-                max="2099"
-                className="px-3 py-2 border border-gray-300 rounded-md w-32"
-              />
-              </div>
-            <div className="flex items-center space-x-2">
-              <span>Month:</span>
-              <select
-                value={format(new Date(selectedMonth), 'MM')}
-                onChange={(e) => {
-                  const currentYear = format(new Date(selectedMonth), 'yyyy');
-                  setSelectedMonth(`${currentYear}-${e.target.value}`);
-                }}
-                className="px-3 py-2 border border-gray-300 rounded-md"
               >
-                <option value="01">January</option>
-                <option value="02">February</option>
-                <option value="03">March</option>
-                <option value="04">April</option>
-                <option value="05">May</option>
-                <option value="06">June</option>
-                <option value="07">July</option>
-                <option value="08">August</option>
-                <option value="09">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
-              </select>
+                <SelectTrigger id="viewType" className="w-full h-10">
+                  <SelectValue placeholder="Select view type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Daily View</SelectItem>
+                  <SelectItem value="month">Monthly View</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        ) : (
-          <div className="flex items-center space-x-2">
-            <span>Year:</span>
-            <input
-              type="number"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              min="2000"
-              max="2099"
-              className="px-3 py-2 border border-gray-300 rounded-md w-32"
-            />
-          </div>
-        )}
-        <Select 
-          value={trendPeriod} 
-          onValueChange={(value: any) => {
-            setTrendPeriod(value);
-            if (value === 'month') {
-              setSelectedYear(format(new Date(selectedMonth), 'yyyy'));
-            }
-          }}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Select period" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="day">Daily</SelectItem>
-            <SelectItem value="month">Monthly</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Combined Sales Volume Trend Chart */}
         <Card>

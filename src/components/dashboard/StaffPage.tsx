@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface StaffPageProps {
   stationId: string;
+  isAdmin?: boolean;
 }
 
 interface Staff {
@@ -30,7 +31,7 @@ interface Staff {
   birthday: string;
 }
 
-const StaffPage: React.FC<StaffPageProps> = ({ stationId }) => {
+const StaffPage: React.FC<StaffPageProps> = ({ stationId, isAdmin }) => {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editStaff, setEditStaff] = useState<Staff | null>(null);
@@ -204,18 +205,19 @@ const StaffPage: React.FC<StaffPageProps> = ({ stationId }) => {
           Our philosophy is simple: hire great people and give them the resources
           and support to do their best work.
         </p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+      </div>      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
         {staffList.map((staff) => (
-          <StaffCard key={staff.id} staff={staff} onEdit={openEditDialog} />
+          <StaffCard key={staff.id} staff={staff} onEdit={openEditDialog} isAdmin={isAdmin} />
         ))}
-        <div
-          className="flex flex-col items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-6 min-h-[220px] cursor-pointer hover:bg-gray-100"
-          onClick={openAddDialog}
-        >
-          <Plus className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-2xl mb-2" />
-          <span className="text-gray-500 text-sm">Add new staff</span>
-        </div>
+        {!isAdmin && (
+          <div
+            className="flex flex-col items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-6 min-h-[220px] cursor-pointer hover:bg-gray-100"
+            onClick={openAddDialog}
+          >
+            <Plus className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-2xl mb-2" />
+            <span className="text-gray-500 text-sm">Add new staff</span>
+          </div>
+        )}
       </div>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
@@ -331,7 +333,7 @@ const StaffPage: React.FC<StaffPageProps> = ({ stationId }) => {
   );
 };
 
-function StaffCard({ staff, onEdit }: { staff: Staff, onEdit: (staff: Staff) => void }) {
+function StaffCard({ staff, onEdit, isAdmin }: { staff: Staff, onEdit: (staff: Staff) => void, isAdmin?: boolean }) {
   const [showDetails, setShowDetails] = React.useState(false);
   return (
     <div
@@ -352,16 +354,17 @@ function StaffCard({ staff, onEdit }: { staff: Staff, onEdit: (staff: Staff) => 
           <div className="font-semibold text-lg text-gray-900">{staff.name}</div>
           <div className="text-blue-700 font-medium text-sm mb-2">{staff.position}</div>
         </>
-      ) : (
-        <>
-          <button
-            className="absolute top-3 right-3 text-gray-400 hover:text-blue-600 p-1 rounded-full bg-white shadow"
-            onClick={(e) => { e.stopPropagation(); onEdit(staff); }}
-            aria-label={`Edit ${staff.name}`}
-            type="button"
-          >
-            <Pencil size={18} />
-          </button>
+      ) : (        <>
+          {!isAdmin && (
+            <button
+              className="absolute top-3 right-3 text-gray-400 hover:text-blue-600 p-1 rounded-full bg-white shadow"
+              onClick={(e) => { e.stopPropagation(); onEdit(staff); }}
+              aria-label={`Edit ${staff.name}`}
+              type="button"
+            >
+              <Pencil size={18} />
+            </button>
+          )}
           <div className="font-bold text-xl text-gray-900 mb-1">{staff.name}</div>
           <div className="text-blue-700 font-semibold text-base mb-2">{staff.position}</div>
           <div className="flex flex-col items-center gap-1 mb-2 w-full">

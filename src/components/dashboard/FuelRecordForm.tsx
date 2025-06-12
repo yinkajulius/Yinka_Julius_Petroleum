@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useSupabaseQuery } from '@/hooks/use-supabase-query';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// Helper function to round monetary values to nearest 10
+const roundToTen = (num: number) => Math.round(num / 10) * 10;
+
+interface ProductPriceRow {
+  product_type: string;
+  price_per_litre: number;
+  effective_date: string;
+  station_id: string;
+}
+
 interface Pump {
   id: string;
   pump_number: number;
@@ -34,9 +45,10 @@ interface ProductPrice {
 interface FuelRecordFormProps {
   stationId: string;
   date: string;
+  isAdmin?: boolean;
 }
 
-const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
+const FuelRecordForm = ({ stationId, date, isAdmin }: FuelRecordFormProps) => {
   const [pumps, setPumps] = useState<Pump[]>([]);
   const [prices, setPrices] = useState<ProductPrice[]>([]);
   const [selectedPump, setSelectedPump] = useState<string>('');
@@ -66,6 +78,7 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
         .from('pumps')
         .select('*')
         .eq('station_id', stationId)
+    
         .order('pump_number');
 
       if (error) throw error;
@@ -73,28 +86,30 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
     } catch (error) {
       console.error('Error loading pumps:', error);
     }
-  };
-
-  const loadPrices = async () => {
+  };    const loadPrices = async () => {
     try {
-      const { data, error } = await supabase
-        .from('product_prices')
-        .select('product_type, price_per_litre')
-        .order('effective_date', { ascending: false });
+      const { data, error } = await useSupabaseQuery<ProductPriceRow>('product_prices', {
+        select: 'product_type, price_per_litre',
+        eq: { station_id: stationId },
+        order: { column: 'effective_date', ascending: false }
+      });
 
       if (error) throw error;
-      
+
       // Get latest price for each product
       const latestPrices: ProductPrice[] = [];
-      const seenProducts = new Set();
-      
-      data?.forEach(price => {
-        if (!seenProducts.has(price.product_type)) {
-          latestPrices.push(price);
-          seenProducts.add(price.product_type);
+      const seenProducts = new Set<string>();
+
+      (data as ProductPriceRow[] || []).forEach(row => {
+        if (!seenProducts.has(row.product_type)) {
+          latestPrices.push({
+            product_type: row.product_type,
+            price_per_litre: row.price_per_litre
+          });
+          seenProducts.add(row.product_type);
         }
       });
-      
+
       setPrices(latestPrices);
     } catch (error) {
       console.error('Error loading prices:', error);
@@ -180,7 +195,7 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
 
   const getProductPrice = (productType: string) => {
     const price = prices.find(p => p.product_type === productType);
-    return price?.price_per_litre || 0;
+    return roundToTen(price?.price_per_litre || 0); // Round price to nearest 10
   };
 
   const handlePumpSelection = async (pumpId: string) => {
@@ -320,7 +335,7 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
 
       const salesVolume = calculateSalesVolume();
       const pricePerLitre = getProductPrice(pump.product_type);
-      const totalSales = salesVolume * pricePerLitre;
+      const totalSales = roundToTen(salesVolume * pricePerLitre); // Round total sales to nearest 10
 
       // Validate meter readings
       if (parseFloat(meterClosing) < parseFloat(meterOpening)) {
@@ -533,90 +548,90 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
 
   const selectedPumpData = pumps.find(p => p.id === selectedPump);
   const salesVolume = calculateSalesVolume();
-  const pricePerLitre = selectedPumpData ? getProductPrice(selectedPumpData.product_type) : 0;
-  const totalSales = salesVolume * pricePerLitre;
-
+  const pricePerLitre = selectedPumpData ? getProductPrice(selectedPumpData.product_type) : 0;      const totalSales = roundToTen(salesVolume * pricePerLitre); // Round total sales to nearest 10
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
-            Add Fuel Record
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="pump">Pump</Label>
-                <Select value={selectedPump} onValueChange={handlePumpSelection} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a pump" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {pumps.map((pump) => (
-                      <SelectItem key={pump.id} value={pump.id}>
-                        Pump {pump.pump_number} - {pump.product_type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+      {!isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Add Fuel Record
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pump">Pump</Label>
+                  <Select value={selectedPump} onValueChange={handlePumpSelection} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a pump" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pumps.map((pump) => (
+                        <SelectItem key={pump.id} value={pump.id}>
+                          Pump {pump.pump_number} - {pump.product_type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="meter-opening">Meter Opening</Label>
-                <Input
-                  id="meter-opening"
-                  type="number"
-                  step="0.01"
-                  value={meterOpening}
-                  onChange={(e) => setMeterOpening(e.target.value)}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="meter-opening">Meter Opening</Label>
+                  <Input
+                    id="meter-opening"
+                    type="number"
+                    step="0.01"
+                    value={meterOpening}
+                    onChange={(e) => setMeterOpening(e.target.value)}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="meter-closing">Meter Closing</Label>
-                <Input
-                  id="meter-closing"
-                  type="number"
-                  step="0.01"
-                  value={meterClosing}
-                  onChange={(e) => setMeterClosing(e.target.value)}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
-            </div>
-
-            {selectedPumpData && (
-              <div className="bg-blue-50 p-4 rounded-lg space-y-2">
-                <h4 className="font-semibold text-blue-900">Calculations</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Sales Volume:</span>
-                    <span className="ml-2 font-medium">{calculateSalesVolume().toFixed(2)} L</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Price per Litre:</span>
-                    <span className="ml-2 font-medium">₦{pricePerLitre.toFixed(2)}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-gray-600">Total Sales:</span>
-                    <span className="ml-2 font-bold text-blue-600">₦{totalSales.toFixed(2)}</span>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="meter-closing">Meter Closing</Label>
+                  <Input
+                    id="meter-closing"
+                    type="number"
+                    step="0.01"
+                    value={meterClosing}
+                    onChange={(e) => setMeterClosing(e.target.value)}
+                    placeholder="0.00"
+                    required
+                  />
                 </div>
               </div>
-            )}
 
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? 'Saving...' : 'Save Fuel Record'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              {selectedPumpData && (
+                <div className="bg-blue-50 p-4 rounded-lg space-y-2">
+                  <h4 className="font-semibold text-blue-900">Calculations</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Sales Volume:</span>
+                      <span className="ml-2 font-medium">{calculateSalesVolume().toFixed(2)} L</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Price per Litre:</span>
+                      <span className="ml-2 font-medium">₦{pricePerLitre.toFixed(2)}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-gray-600">Total Sales:</span>
+                      <span className="ml-2 font-bold text-blue-600">₦{totalSales.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <Button type="submit" disabled={loading} className="w-full">
+                {loading ? 'Saving...' : 'Save Fuel Record'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Saved Records Card */}
       <Card>
@@ -637,11 +652,13 @@ const FuelRecordForm = ({ stationId, date }: FuelRecordFormProps) => {
                     key={record.id}
                     className="relative group"
                   >
-                    <div className="absolute right-0 top-0 bottom-0 bg-red-500 text-white px-4 flex items-center transform translate-x-full group-hover:translate-x-0 transition-transform cursor-pointer"
-                         onClick={() => handleDeleteRecord(record.id)}>
-                      <Trash2 className="h-5 w-5" />
-                    </div>
-                    <Card className="overflow-hidden">
+                    {!isAdmin && (
+                      <div className="absolute right-0 top-0 bottom-0 bg-red-500 text-white px-4 flex items-center transform translate-x-full group-hover:translate-x-0 transition-transform cursor-pointer"
+                           onClick={() => handleDeleteRecord(record.id)}>
+                        <Trash2 className="h-5 w-5" />
+                      </div>
+                    )}
+                    <Card className="transform transition-transform group-hover:-translate-x-16">
                       <CardContent className="p-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div>

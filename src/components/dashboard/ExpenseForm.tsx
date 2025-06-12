@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useSupabaseQuery } from '@/hooks/use-supabase-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,9 +14,16 @@ import { format } from 'date-fns';
 interface ExpenseFormProps {
   stationId: string;
   date: string;
+  isAdmin?: boolean;
 }
 
-const ExpenseForm = ({ stationId, date }: ExpenseFormProps) => {
+interface ProductPrice {
+  product_type: string;
+  price_per_litre: number;
+  effective_date: string;
+}
+
+const ExpenseForm = ({ stationId, date, isAdmin }: ExpenseFormProps) => {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
@@ -66,20 +74,26 @@ const ExpenseForm = ({ stationId, date }: ExpenseFormProps) => {
       console.error('Error loading expenses:', error);
     }
   };
-
   const handleProductSelection = async (selectedProduct: string) => {
     setProduct(selectedProduct);
     try {
-      const { data, error } = await supabase
-        .from('product_prices')
-        .select('price_per_litre')
-        .eq('product_type', selectedProduct)
-        .order('effective_date', { ascending: false })
-        .limit(1)
-        .single();
+      const { data, error } = await useSupabaseQuery<ProductPrice>('product_prices', {
+        select: 'price_per_litre',
+        eq: { 
+          product_type: selectedProduct,
+          station_id: stationId 
+        },
+        order: { 
+          column: 'effective_date',
+          ascending: false 
+        }
+      });
 
       if (error) throw error;
-      setPricePerLitre(data.price_per_litre.toString());
+      if (!data || data.length === 0) {
+        throw new Error('No price found for this product');
+      }
+      setPricePerLitre(data[0].price_per_litre.toString());
     } catch (error) {
       console.error('Error loading price:', error);
       toast({
@@ -87,6 +101,7 @@ const ExpenseForm = ({ stationId, date }: ExpenseFormProps) => {
         title: "Error",
         description: "Failed to load product price",
       });
+      setPricePerLitre('');
     }
   };
 
@@ -197,171 +212,173 @@ const ExpenseForm = ({ stationId, date }: ExpenseFormProps) => {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
-            Add Expense
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {expenseCategories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+      {!isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Add Expense
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expenseCategories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {category === 'Fuel Collection' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="drivers-name">Driver's Name</Label>
+                      <Input
+                        id="drivers-name"
+                        value={driversName}
+                        onChange={(e) => setDriversName(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="company">Company</Label>
+                      <Input
+                        id="company"
+                        value={company}
+                        onChange={(e) => setCompany(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="product">Product</Label>
+                      <Select value={product} onValueChange={handleProductSelection} required>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select product" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {productTypes.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {type}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="litres">Litres</Label>
+                      <Input
+                        id="litres"
+                        type="number"
+                        step="0.01"
+                        value={litres}
+                        onChange={(e) => setLitres(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="price-per-litre">Price per Litre (₦)</Label>
+                      <Input
+                        id="price-per-litre"
+                        type="number"
+                        step="0.01"
+                        value={pricePerLitre}
+                        readOnly
+                        className="bg-gray-100"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="amount">Amount (₦)</Label>
+                      <Input
+                        id="amount"
+                        type="number"
+                        step="0.01"
+                        value={calculateAmount()}
+                        readOnly
+                        className="bg-gray-100"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="ticket-number">Ticket Number</Label>
+                      <Input
+                        id="ticket-number"
+                        value={ticketNumber}
+                        onChange={(e) => setTicketNumber(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="attendant-name">Attendant Name</Label>
+                      <Input
+                        id="attendant-name"
+                        value={attendantName}
+                        onChange={(e) => setAttendantName(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="remarks">Remarks</Label>
+                      <Textarea
+                        id="remarks"
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                        placeholder="Enter any remarks"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea
+                        id="description"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Enter expense description"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="amount">Amount (₦)</Label>
+                      <Input
+                        id="amount"
+                        type="number"
+                        step="0.01"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="0.00"
+                        required
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
-              {category === 'Fuel Collection' ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="drivers-name">Driver's Name</Label>
-                    <Input
-                      id="drivers-name"
-                      value={driversName}
-                      onChange={(e) => setDriversName(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="company">Company</Label>
-                    <Input
-                      id="company"
-                      value={company}
-                      onChange={(e) => setCompany(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="product">Product</Label>
-                    <Select value={product} onValueChange={handleProductSelection} required>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {productTypes.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="litres">Litres</Label>
-                    <Input
-                      id="litres"
-                      type="number"
-                      step="0.01"
-                      value={litres}
-                      onChange={(e) => setLitres(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="price-per-litre">Price per Litre (₦)</Label>
-                    <Input
-                      id="price-per-litre"
-                      type="number"
-                      step="0.01"
-                      value={pricePerLitre}
-                      readOnly
-                      className="bg-gray-100"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Amount (₦)</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      value={calculateAmount()}
-                      readOnly
-                      className="bg-gray-100"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="ticket-number">Ticket Number</Label>
-                    <Input
-                      id="ticket-number"
-                      value={ticketNumber}
-                      onChange={(e) => setTicketNumber(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="attendant-name">Attendant Name</Label>
-                    <Input
-                      id="attendant-name"
-                      value={attendantName}
-                      onChange={(e) => setAttendantName(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="remarks">Remarks</Label>
-                    <Textarea
-                      id="remarks"
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="Enter any remarks"
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Enter expense description"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Amount (₦)</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="0.00"
-                      required
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? 'Saving...' : 'Save Expense'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+                {loading ? 'Saving...' : 'Save Expense'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -378,13 +395,14 @@ const ExpenseForm = ({ stationId, date }: ExpenseFormProps) => {
                   <div
                     key={expense.id}
                     className="relative group"
-                  >
-                    <div 
-                      className="absolute right-0 top-0 bottom-0 bg-red-500 text-white px-4 flex items-center transform translate-x-full group-hover:translate-x-0 transition-transform cursor-pointer"
-                      onClick={() => handleDeleteExpense(expense.id)}
-                    >
-                      <Trash2 className="h-5 w-5" />
-                    </div>
+                  >                    {!isAdmin && (
+                      <div 
+                        className="absolute right-0 top-0 bottom-0 bg-red-500 text-white px-4 flex items-center transform translate-x-full group-hover:translate-x-0 transition-transform cursor-pointer"
+                        onClick={() => handleDeleteExpense(expense.id)}
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </div>
+                    )}
                     <Card className="transform transition-transform group-hover:-translate-x-16">
                       <CardContent className="p-4">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">

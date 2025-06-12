@@ -26,6 +26,7 @@ import {
 interface StockManagementProps {
   stationId: string;
   date: string;
+  isAdmin?: boolean;
 }
 
 interface Pump {
@@ -59,7 +60,7 @@ interface TankCapacity {
   capacity: number;
 }
 
-export const StockManagement = ({ stationId, date }: StockManagementProps): React.ReactElement => {
+export const StockManagement = ({ stationId, date, isAdmin = false }: StockManagementProps): React.ReactElement => {
   const [tankGroups, setTankGroups] = useState<TankGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [restockAmounts, setRestockAmounts] = useState<RestockInputs>({});
@@ -539,68 +540,70 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
     <div className="space-y-6">
       <div className="flex flex-col space-y-4 md:flex-row md:justify-between md:items-center">
         <h2 className="text-2xl font-bold">Tank Management</h2>
-        <div className="flex flex-col space-y-4 md:flex-row md:items-center md:gap-4">
-          <Dialog open={showCapacityDialog} onOpenChange={setShowCapacityDialog}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="w-full md:w-auto">
-                <Settings className="h-4 w-4 mr-2" />
-                Manage Tank Capacities
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Manage Tank Capacities</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-4">
-                  {tankGroups.map((tank) => (
-                    <div key={tank.tank_id} className="flex justify-between items-center">
-                      <span>Tank {tank.tank_id} ({tank.product_type})</span>
-                      <span>{tank.maxCapacity.toLocaleString()}L</span>
+        {!isAdmin && (
+          <div className="flex flex-col space-y-4 md:flex-row md:items-center md:gap-4">
+            <Dialog open={showCapacityDialog} onOpenChange={setShowCapacityDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full md:w-auto">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Manage Tank Capacities
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Manage Tank Capacities</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-4">
+                    {tankGroups.map((tank) => (
+                      <div key={tank.tank_id} className="flex justify-between items-center">
+                        <span>Tank {tank.tank_id} ({tank.product_type})</span>
+                        <span>{tank.maxCapacity.toLocaleString()}L</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-4 pt-4 border-t">
+                    <div className="space-y-2">
+                      <Label htmlFor="tank_id">Select Tank</Label>
+                      <Select
+                        value={selectedTank || ''}
+                        onValueChange={setSelectedTank}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select tank" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tankGroups.map((tank) => (
+                            <SelectItem key={tank.tank_id} value={tank.tank_id}>
+                              Tank {tank.tank_id} ({tank.product_type})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  ))}
-                </div>
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <Label htmlFor="tank_id">Select Tank</Label>
-                    <Select
-                      value={selectedTank || ''}
-                      onValueChange={setSelectedTank}
+                    <div className="space-y-2">
+                      <Label htmlFor="capacity">Capacity (Litres)</Label>
+                      <Input
+                        id="capacity"
+                        type="number"
+                        value={newCapacity}
+                        onChange={(e) => setNewCapacity(e.target.value)}
+                        placeholder="Enter tank capacity"
+                      />
+                    </div>
+                    <Button 
+                      onClick={handleCapacitySubmit}
+                      disabled={isSubmitting}
+                      className="w-full"
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select tank" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {tankGroups.map((tank) => (
-                          <SelectItem key={tank.tank_id} value={tank.tank_id}>
-                            Tank {tank.tank_id} ({tank.product_type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      {isSubmitting ? 'Saving...' : 'Save Capacity'}
+                    </Button>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="capacity">Capacity (Litres)</Label>
-                    <Input
-                      id="capacity"
-                      type="number"
-                      value={newCapacity}
-                      onChange={(e) => setNewCapacity(e.target.value)}
-                      placeholder="Enter tank capacity"
-                    />
-                  </div>
-                  <Button 
-                    onClick={handleCapacitySubmit}
-                    disabled={isSubmitting}
-                    className="w-full"
-                  >
-                    {isSubmitting ? 'Saving...' : 'Save Capacity'}
-                  </Button>
                 </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -669,31 +672,33 @@ export const StockManagement = ({ stationId, date }: StockManagementProps): Reac
                   </div>
                 </div>
               </CardContent>
-              <CardFooter className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 w-full">
-                  <Input
-                    type="number"
-                    placeholder="Enter amount to add"
-                    value={restockAmounts[tank.tank_id] || ''}
-                    onChange={(e) => handleRestockChange(tank.tank_id, e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button 
-                    onClick={() => handleRestock(tank.tank_id, tank.openingStock, tank.product_type)}
-                    disabled={restockLoading[tank.tank_id]}
-                    size="sm"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    {restockLoading[tank.tank_id] ? 'Adding...' : 'Add'}
-                  </Button>
-                </div>
-              </CardFooter>
+              {!isAdmin && (
+                <CardFooter className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 w-full">
+                    <Input
+                      type="number"
+                      placeholder="Enter amount to add"
+                      value={restockAmounts[tank.tank_id] || ''}
+                      onChange={(e) => handleRestockChange(tank.tank_id, e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button 
+                      onClick={() => handleRestock(tank.tank_id, tank.openingStock, tank.product_type)}
+                      disabled={restockLoading[tank.tank_id]}
+                      size="sm"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      {restockLoading[tank.tank_id] ? 'Adding...' : 'Add'}
+                    </Button>
+                  </div>
+                </CardFooter>
+              )}
             </Card>
           );
         })}
       </div>
 
-      {isFirstOfMonth && (
+      {isFirstOfMonth && !isAdmin && (
         <div className="my-8 p-6 bg-blue-50 rounded-xl shadow border border-blue-200">
           <h2 className="text-xl font-bold text-blue-800 mb-4">Excess Calculations</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

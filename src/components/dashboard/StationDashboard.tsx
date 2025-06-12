@@ -302,25 +302,24 @@ const StationDashboard = () => {
                     />
                   )}
                 </div>
-                
-                {/* Tab content rendering */}
+                  {/* Tab content rendering */}
                 <div className="w-full">
                   {selectedTab === 'fuel-records' && (
-                    <FuelRecordForm stationId={selectedStation.id} date={selectedDate} />
+                    <FuelRecordForm stationId={selectedStation.id} date={selectedDate} isAdmin={profile?.role === 'admin'} />
                   )}
                   {selectedTab === 'expenses' && (
-                    <ExpenseForm stationId={selectedStation.id} date={selectedDate} />
+                    <ExpenseForm stationId={selectedStation.id} date={selectedDate} isAdmin={profile?.role === 'admin'} />
                   )}
                   {selectedTab === 'stock' && (
                     <FuelRecordsProvider>
-                      <StockManagement stationId={selectedStation.id} date={selectedDate} />
+                      <StockManagement stationId={selectedStation.id} date={selectedDate} isAdmin={profile?.role === 'admin'} />
                     </FuelRecordsProvider>
                   )}
                   {selectedTab === 'summary' && (
                     <DailySummary stationId={selectedStation.id} date={selectedDate} />
                   )}
                   {selectedTab === 'staff' && (
-                    <StaffPage stationId={selectedStation.id} />
+                    <StaffPage stationId={selectedStation.id} isAdmin={profile?.role === 'admin'} />
                   )}
                 </div>
               </div>
@@ -451,23 +450,23 @@ const StationDashboard = () => {
               </div>
               
               {/* Tab content rendering */}
-              <div className="w-full">
+              <div className="w-full">                
                 {selectedTab === 'fuel-records' && (
-                  <FuelRecordForm stationId={station.id} date={selectedDate} />
+                  <FuelRecordForm stationId={station.id} date={selectedDate} isAdmin={profile?.role === 'admin'} />
                 )}
                 {selectedTab === 'expenses' && (
-                  <ExpenseForm stationId={station.id} date={selectedDate} />
+                  <ExpenseForm stationId={station.id} date={selectedDate} isAdmin={profile?.role === 'admin'} />
                 )}
                 {selectedTab === 'stock' && (
                   <FuelRecordsProvider>
-                    <StockManagement stationId={station.id} date={selectedDate} />
+                    <StockManagement stationId={station.id} date={selectedDate} isAdmin={profile?.role === 'admin'} />
                   </FuelRecordsProvider>
                 )}
                 {selectedTab === 'summary' && (
                   <DailySummary stationId={station.id} date={selectedDate} />
                 )}
                 {selectedTab === 'staff' && (
-                  <StaffPage stationId={station.id} />
+                  <StaffPage stationId={station.id} isAdmin={profile?.role === 'admin'} />
                 )}
               </div>
             </div>

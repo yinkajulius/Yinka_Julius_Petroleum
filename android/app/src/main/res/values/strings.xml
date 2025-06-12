@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Yinka Julius Petroleum</string>
+    <string name="title_activity_main">Yinka Julius Petroleum</string>
+    <string name="package_name">com.yinkajulius.petroleum</string>
+    <string name="custom_url_scheme">com.yinkajulius.petroleum</string>
+</resources>
